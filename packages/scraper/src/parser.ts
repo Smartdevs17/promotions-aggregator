@@ -31,7 +31,7 @@ function attrOf($: CheerioAPI, selectors: string[], attr: string): string | null
 function parseIsoDate(value: string | null): string | null {
   if (!value) return null;
   const direct = value.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
-  if (direct) return `${direct[1]}-${direct[2]}-${direct[3]}`;
+  if (direct?.[1] && direct[2] && direct[3]) return `${direct[1]}-${direct[2]}-${direct[3]}`;
   const parsed = new Date(value);
   if (Number.isNaN(parsed.valueOf())) return null;
   return parsed.toISOString().slice(0, 10);
@@ -47,7 +47,7 @@ function extractDatePair($: CheerioAPI): { startDate: string | null; endDate: st
 
   const body = normalizeWhitespace($('body').text());
   const range = body.match(/(?:valid|offer|promotion|sale)?\s*(?:from\s*)?([A-Za-z]{3,9}\s+\d{1,2},?\s+20\d{2}|20\d{2}-\d{2}-\d{2})\s*(?:-|–|—|through|to)\s*([A-Za-z]{3,9}\s+\d{1,2},?\s+20\d{2}|20\d{2}-\d{2}-\d{2})/i);
-  if (range) return { startDate: parseIsoDate(range[1]), endDate: parseIsoDate(range[2]) };
+  if (range?.[1] && range[2]) return { startDate: parseIsoDate(range[1]), endDate: parseIsoDate(range[2]) };
 
   const until = body.match(/(?:through|until|expires?)\s+([A-Za-z]{3,9}\s+\d{1,2},?\s+20\d{2}|20\d{2}-\d{2}-\d{2})/i);
   return { startDate: null, endDate: parseIsoDate(until?.[1] ?? null) };
@@ -82,6 +82,7 @@ export function discoverPromotionLinks(html: string, listingUrl: string): string
 function inferBrandLink($: CheerioAPI, pageUrl: string): { name: string | null; url: string | null } {
   const origin = new URL(pageUrl).origin;
   const preferredSelectors = [
+    'a.store-link[href*="/stores/"]',
     '[class*="tenant"] a[href]',
     '[class*="store"] a[href]',
     '[class*="retailer"] a[href]',
@@ -149,15 +150,16 @@ export function parsePromotionDetail(html: string, pageUrl: string, sourcePortal
 export function parseBrandDetail(html: string, pageUrl: string, fallbackName: string): ScrapedBrand {
   const $ = load(html);
   const origin = new URL(pageUrl).origin;
+  const scope = '.store-container-component';
   const name = firstNonEmpty(
-    textOf($, ['h1','[itemprop="name"]','[class*="store-name"]','[class*="tenant-name"]']),
+    textOf($, [`${scope} h1`, `${scope} [itemprop="name"]`, `${scope} [class*="store-name"]`, `${scope} [class*="tenant-name"]`]),
     fallbackName,
   ) ?? fallbackName;
 
   const socialLinks: Record<string, string> = {};
   let websiteUrl: string | null = null;
 
-  $('a[href]').each((_, element) => {
+  $(`${scope} a[href]`).each((_, element) => {
     const href = $(element).attr('href');
     if (!href) return;
     try {
@@ -169,7 +171,11 @@ export function parseBrandDetail(html: string, pageUrl: string, fallbackName: st
         return;
       }
       const text = normalizeWhitespace($(element).text()).toLowerCase();
-      const isLikelyWebsite = url.origin !== origin && (text.includes('website') || text.includes('visit') || $(element).is('[class*="website"]'));
+      const isLikelyWebsite = url.origin !== origin && (
+        text.includes('website') ||
+        text.includes('visit') ||
+        $(element).is('[class*="website"], [class*="ext_retailer"]')
+      );
       if (!websiteUrl && isLikelyWebsite) websiteUrl = canonicalizeUrl(url.toString());
     } catch {
       // Ignore malformed third-party links.
@@ -177,9 +183,10 @@ export function parseBrandDetail(html: string, pageUrl: string, fallbackName: st
   });
 
   const hours = firstNonEmpty(
-    textOf($, ['[itemprop="openingHours"]','[class*="hours"]','[data-hours]']),
+    $(`${scope} .opening-hours li`).map((_, element) => normalizeWhitespace($(element).text())).get().join('; '),
+    textOf($, [`${scope} [itemprop="openingHours"]`, `${scope} [class*="hours"]`, `${scope} [data-hours]`]),
     (() => {
-      const body = normalizeWhitespace($('body').text());
+      const body = normalizeWhitespace($(`${scope}`).text());
       const match = body.match(/((?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)[\s\S]{0,220}(?:am|pm))/i);
       return match?.[1] ?? null;
     })(),

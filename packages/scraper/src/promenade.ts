@@ -25,7 +25,9 @@ async function mapLimit<T, R>(items: T[], limit: number, mapper: (item: T) => Pr
       const index = next;
       next += 1;
       if (index >= items.length) return;
-      results[index] = await mapper(items[index]);
+      const item = items[index];
+      if (item === undefined) return;
+      results[index] = await mapper(item);
     }
   }
 

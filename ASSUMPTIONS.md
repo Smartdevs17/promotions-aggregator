@@ -22,4 +22,10 @@ This file records interpretations of ambiguous parts of the take-home brief and 
 
 ## Discoveries during implementation
 
-_To be updated as the live portal is inspected and implementation proceeds._
+- The configured sales URL responds with a 301 redirect to `/sales/`. The final page is reachable with a browser and contains the current deal cards in the initial HTML; the live inspection found 23 unique deal links and no pagination or load-more control.
+- Promotion detail URLs use `/deals/{numeric-id}/`, not `/sales/*`. Promotion pages link to the associated tenant at `/stores/{numeric-id-slug}/` through an `a.store-link` element.
+- Store pages expose the tenant name in the store detail `h1`, external website links as `.external_link.ext_retailer`, and hours in `.store-container-component .opening-hours li`. Mall-wide footer social links are outside the store detail container and must not be attributed to a brand. Brand-level social links are absent on the inspected store pages, so `socialLinks` remains `{}` when none are present at source.
+- The live content was present after `domcontentloaded`; Playwright remains the browser transport because it follows the source redirect and provides browser-grade behavior consistently. The scraper does not rely on client-side XHR data for the inspected listing.
+- `robots.txt` allows the relevant public sales, deals, and stores paths, declares `Crawl-delay: 60` for `User-agent: *`, and disallows unrelated paths such as profile, admin, live-update, and sign-in. The scraper stays on same-origin listing, deal, and store pages with bounded concurrency, retries, and a request delay; production scheduling should honor the published crawl delay.
+- Promotion dates are not exposed as machine-readable dates on the inspected detail pages; pages show relative labels such as “Ends Today” or “Ends 9/17”. The scraper leaves `startDate` and `endDate` as `null` rather than inventing a year or date.
+- Canonical promotion identity is the normalized `/deals/{numeric-id}` URL hashed with SHA-256. Tracking parameters, fragments, and trailing slashes do not change `sourceKey`; no better public stable promotion identifier was found than the numeric deal URL itself.

@@ -14,7 +14,8 @@ async function main(): Promise<void> {
   console.log(JSON.stringify({
     sourceHealth: result.sourceHealth,
     diagnostics: result.diagnostics,
-    sample: result.promotions.slice(0, 3),
+    sample: result.promotions.slice(0, 5),
+    sampleBrands: [...new Map(result.promotions.map((promotion) => [promotion.brand.sourceUrl ?? promotion.brand.name, promotion.brand])).values()].slice(0, 5),
   }, null, 2));
 
   if (result.sourceHealth !== 'healthy') process.exitCode = 2;

@@ -9,11 +9,14 @@ describe('scraper parsing', () => {
     const html = `
       <a href="/sales">Sales</a>
       <a href="/sales/summer-style">Summer Style</a>
+      <a href="/deals/3434190/">Live deal</a>
+      <a href="/deals/3434190/?utm_source=test#details">Duplicate live deal</a>
       <a href="https://www.thepromenadeshopsatbriargate.com/sales/summer-style?utm_source=test">Duplicate</a>
       <a href="https://example.com/sales/external">External</a>
     `;
     expect(discoverPromotionLinks(html, listingUrl)).toEqual([
       'https://www.thepromenadeshopsatbriargate.com/sales/summer-style',
+      'https://www.thepromenadeshopsatbriargate.com/deals/3434190',
     ]);
   });
 
@@ -45,13 +48,13 @@ describe('scraper parsing', () => {
 
   it('extracts brand website, social links and hours', () => {
     const html = `
-      <main>
+      <main><div class="store-container-component">
         <h1>Example Store</h1>
-        <div class="hours">Monday - Saturday 10 AM - 9 PM; Sunday 11 AM - 6 PM</div>
-        <a class="website" href="https://example-store.com/?utm_source=mall">Visit Website</a>
+        <ul class="opening-hours"><li>Monday - Saturday 10 AM - 9 PM</li><li>Sunday 11 AM - 6 PM</li></ul>
+        <a class="external_link ext_retailer" href="https://example-store.com/?utm_source=mall">View Website</a>
         <a href="https://instagram.com/example-store">Instagram</a>
         <a href="https://facebook.com/example-store">Facebook</a>
-      </main>
+      </div><footer><a href="https://instagram.com/mall">Mall Instagram</a></footer></main>
     `;
     const brand = parseBrandDetail(html, 'https://www.thepromenadeshopsatbriargate.com/stores/example-store', 'Fallback');
     expect(brand.name).toBe('Example Store');
@@ -60,6 +63,21 @@ describe('scraper parsing', () => {
     expect(brand.hours).toContain('Monday - Saturday');
     expect(brand.socialLinks.instagram).toBe('https://instagram.com/example-store');
     expect(brand.socialLinks.facebook).toBe('https://facebook.com/example-store');
+  });
+
+  it('uses the live portal store link instead of navigation links for promotion brands', () => {
+    const html = `
+      <main>
+        <nav><a href="/directory-map/">Directory Map</a></nav>
+        <div class="deal-detail-info">
+          <h1>Sample live deal</h1>
+          <a class="store-link" href="/stores/1036000-bath-and-body-works/">Bath &amp; Body Works</a>
+        </div>
+      </main>
+    `;
+    const result = parsePromotionDetail(html, 'https://www.thepromenadeshopsatbriargate.com/deals/3434190/', listingUrl);
+    expect(result.brandName).toBe('Bath & Body Works');
+    expect(result.brandSourceUrl).toBe('https://www.thepromenadeshopsatbriargate.com/stores/1036000-bath-and-body-works');
   });
 });
 
