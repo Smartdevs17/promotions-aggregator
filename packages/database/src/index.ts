@@ -28,6 +28,10 @@ export function initModels(sequelize: Sequelize): void {
     as: 'verificationDiscrepancies',
     onDelete: 'CASCADE',
   });
+  VerificationDiscrepancyModel.belongsTo(PromotionModel, {
+    foreignKey: 'promotionId',
+    as: 'promotion',
+  });
 }
 
 export function createDatabase(config: DatabaseConfig): Sequelize {

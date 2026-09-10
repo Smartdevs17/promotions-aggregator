@@ -68,6 +68,7 @@ export const verificationReportSchema = z.object({
   clean: z.boolean(),
   checked: z.number().int().nonnegative(),
   discrepancies: z.array(verificationDiscrepancySchema),
+  errorSummary: z.string().nullable(),
   startedAt: z.iso.datetime().nullable(),
   finishedAt: z.iso.datetime().nullable(),
 });
