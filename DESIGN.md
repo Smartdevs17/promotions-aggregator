@@ -13,25 +13,25 @@ The repository is a pnpm workspace with three applications and shared packages:
 - `apps/api`: Express REST API. It validates requests, reads persisted data, and enqueues scrape/verification work. It never performs a scrape inline.
 - `apps/worker`: BullMQ workers for scrape and verification jobs.
 - `apps/web`: Next.js UI.
-- `packages/shared`: runtime schemas and TypeScript contracts shared by scraper, queue payloads, API, and UI.
-- `packages/database`: Sequelize models, migrations, repositories, and PostgreSQL connection.
+- `packages/shared`: runtime schemas and TypeScript contracts shared across API/UI/job boundaries.
+- `packages/database`: Sequelize models, migrations, and PostgreSQL connection.
 - `packages/scraper`: source-specific extraction, normalization, enrichment, politeness, and comparison helpers.
 
-PostgreSQL stores domain data and durable run/report metadata. Redis is used by BullMQ. Docker Compose runs the web app, API, worker, PostgreSQL, and Redis.
+PostgreSQL stores domain data and durable run/report metadata. Redis is used by BullMQ. Docker Compose runs the web app, API, worker, migration step, PostgreSQL, and Redis.
 
 ## Scraping approach
 
-The source is intentionally treated as a real external dependency rather than stable HTML. The scraper will use Playwright for browser-grade navigation where required by redirects/client behaviour and Cheerio for deterministic HTML extraction where practical. The promotions listing is discovered first, promotion detail pages are traversed when fields are missing, and brand directory/detail pages are stitched in to obtain website URL, hours, and social links.
+The source is intentionally treated as a real external dependency rather than stable HTML. The scraper uses Playwright for browser-grade navigation and redirect handling, with Cheerio for deterministic HTML extraction. It discovers promotion detail URLs from the sales listing, traverses promotion pages, follows tenant/store links, and stitches website/hours metadata into each promotion's normalized brand record.
 
 A source adapter is intentionally specific to this mall. We avoid a generic multi-portal framework because it is a stated non-goal.
 
-Scraping is polite: bounded concurrency, a small delay between source requests, an identifiable user agent, request timeouts, and a shared request budget for scrape and verification jobs. We will inspect robots.txt and document any relevant discovery in `ASSUMPTIONS.md`.
+Scraping uses bounded concurrency, request delays, an identifiable user agent, retries, and timeouts. Source behavior and the portal's `robots.txt` findings are documented in `ASSUMPTIONS.md`.
 
 ## Data model
 
 Brands are normalized because many promotions can belong to one brand and brand metadata changes independently. A promotion references one brand.
 
-A promotion has an internal UUID plus a deterministic `sourceKey`. The source key prefers a stable source identifier when available; otherwise it is derived from the canonical promotion URL. A uniqueness constraint on `(sourcePortal, sourceKey)` makes re-scrapes idempotent.
+A promotion has an internal UUID plus a deterministic `sourceKey`. The current source exposes a canonical `/deals/{id}` locator, so the normalized canonical URL is hashed into a stable source key. A uniqueness constraint on `(sourcePortal, sourceKey)` makes re-scrapes idempotent.
 
 Core entities:
 
@@ -39,62 +39,64 @@ Core entities:
 - `Promotion`: source key, name, description, image URL, optional start/end dates, canonical URL, source portal, brand ID, scraped/verified timestamps and verification status.
 - `ScrapeRun`: BullMQ job ID, state, attempted/persisted/updated/skipped/failed counts, timing, error summary, and source-health information.
 - `VerificationRun`: BullMQ job ID, state, timing, clean/discrepancy counts, and errors.
-- `VerificationDiscrepancy`: promotion, kind, field, normalized before/after values, and verification failure reason where applicable.
+- `VerificationDiscrepancy`: promotion, kind, field, before/after values, and verification failure reason where applicable.
 
-Missing scalar source data is represented as `null`; missing collections such as social links are `[]`. The shared runtime schemas enforce this consistently.
+Missing scalar source data is represented as `null`; map-like collections such as `socialLinks` use `{}`. We do not invent missing source values.
 
 ## Queue and run health
 
-`POST /scrape` and `POST /verify` enqueue BullMQ jobs and immediately return identifiers. Workers are separate from the API process. Jobs use bounded attempts, exponential backoff, timeouts, structured failure logging, and durable run rows so job history remains queryable independently of Redis retention.
+`POST /scrape` and `POST /verify` enqueue BullMQ jobs and immediately return identifiers. Workers are separate from the API process. Jobs use bounded attempts, exponential backoff, a real configurable execution timeout, stalled-job handling, queue-submission timeout, and durable run rows so job history remains queryable independently of Redis retention.
 
-Run health is a first-class concern. A technically successful request that extracts zero promotions is not silently accepted: it is marked suspicious when the source page was reachable but expected structures/data disappeared. Parser invariants distinguish a legitimate empty result from likely selector/source drift. Structured logs include `jobId`, `runId`, stage, and source URL.
+Run health is a first-class concern. A technically reachable source that produces suspicious zero extraction is not silently accepted as success. Durable status records expose counts, source health, timestamps, and actionable errors. Worker failures do not terminate the API process.
 
-The API exposes `/health` for API/PostgreSQL/Redis readiness. Worker failures never terminate the API.
+The API exposes `/health` for API/PostgreSQL/Redis readiness.
 
 ## Verification
 
-Verification revisits persisted canonical source records and compares meaningful normalized values with stored values. It reports:
+Verification re-scrapes the source and compares persisted promotions against the current live records. It reports:
 
 - records no longer present at the source;
 - changed meaningful fields with before/after values;
 - records that could not be verified and a concrete reason;
 - an explicit clean result when no discrepancies exist.
 
-Comparison normalization removes irrelevant whitespace and equivalent URL formatting. Image CDN query-string churn is ignored unless the meaningful image identity changes. Dates, names, descriptions, canonical URLs, and relevant brand association/metadata changes are meaningful.
+Comparison normalization removes irrelevant whitespace and equivalent URL formatting. Image CDN query-string churn is ignored unless the meaningful image identity changes. Dates, names, descriptions, canonical URLs, and relevant brand association/metadata changes remain meaningful.
 
-For this single-mall MVP, verification covers all persisted promotions. The data set is expected to be small enough that complete verification provides a stronger correctness signal than sampling while still respecting the shared source-request budget.
+For this single-mall MVP, verification covers all persisted promotions. The live investigation confirmed that the portal can mutate tenant/promotion content while retaining the same `/deals/{id}` URL, so a successful verification run may legitimately be non-clean. Those source-backed semantic changes are intentionally surfaced rather than masked.
 
 ## API and type safety
 
-Request query parameters are runtime-validated. `GET /promotions` supports search, startDate, endDate, brand, page, and pageSize. `GET /brands` includes promotion counts and scraped brand metadata. Job/report endpoints use shared contracts.
+Request query parameters are runtime-validated. `GET /promotions` supports `search`, `startDate`, `endDate`, `brand`, `page`, and `pageSize`; `GET /promotions/:id` returns one promotion with its brand metadata; `GET /brands` includes promotion counts and scraped brand metadata. Job/report endpoints expose durable scrape and verification status.
 
-Shared schemas are the source of truth for DTOs and queue payloads. `any` is prohibited unless an integration boundary genuinely requires it and the reason is documented locally.
+Shared Zod schemas and inferred TypeScript types are the source of truth for application DTOs. `any` is avoided unless an integration boundary genuinely requires it and the reason is documented locally.
 
-OpenAPI documentation is generated/exposed for reviewer discoverability, while the shared package remains the application-level type contract.
+OpenAPI is exposed at `/openapi.json`, with a lightweight discoverability page at `/docs`.
 
 ## UI
 
-The Next.js UI provides promotion cards, keyword search, filtering, page-number pagination, and list/group-by-brand modes. Grouped sections expose website, hours, and social links. A compact run-health surface shows the most recent scrape/verification state and flags suspicious/failed runs without turning the exercise into an admin product.
+The Next.js UI provides promotion cards, keyword search, brand filtering, pagination, and flat/group-by-brand modes. Grouped sections expose brand website and hours when available. A compact run-health surface shows scrape/verification state, counts, source health, discrepancies, and failures without turning the exercise into an admin product.
+
+The grouped view operates on the current paginated result set, which is a deliberate MVP tradeoff.
 
 ## Testing
 
-Backend tests use Vitest and Supertest for validation, filtering/pagination, job-enqueue semantics, persistence behaviour, idempotency, verification comparison, and failure paths. Scraper parsing uses saved HTML fixtures so selector behaviour can be tested deterministically without repeatedly hitting the live portal.
+Backend tests use Vitest and Supertest for validation, filtering/pagination, job-enqueue semantics, persistence behaviour, idempotency, verification comparison, and failure paths. Database integration tests run against real PostgreSQL. Scraper parsing uses saved sanitized HTML fixtures so selector behaviour can be tested deterministically without repeatedly hitting the live portal.
 
-Playwright E2E covers the reviewer-critical UI journey: render promotions, search/filter, paginate, switch to group-by-brand, and surface source links/run health. Live-source smoke checks remain separate from deterministic automated tests.
+Playwright E2E covers the reviewer-critical UI journey: render promotions, search/filter, paginate, switch to group-by-brand, surface source links, and exercise scrape/verification run-health UX. Deterministic browser tests use API interception, while the complete Docker-backed browser → API → Redis → worker → live source → PostgreSQL → UI path was separately validated.
 
-## Failure modes anticipated
+## Failure modes exercised
 
-- Source redirects or rejects naive HTTP clients.
-- Listing/detail selectors change and extraction returns zero records.
-- One malformed promotion or brand page fails while others are valid.
-- Brand enrichment is partially unavailable.
-- Redis becomes unavailable while API reads should remain safe.
-- A worker dies mid-job.
-- Re-scraping produces duplicate records.
-- Cosmetic source changes create false verification discrepancies.
-
-Each is made visible through validation, per-record failure counts, run state, structured logs, retries where safe, and explicit verification/source-health results.
+- Source redirects and browser-grade navigation requirements.
+- Listing/detail selector drift and suspicious extraction.
+- Partial promotion/brand failures.
+- Redis unavailable during queue submission.
+- PostgreSQL unavailable during health checks.
+- Worker execution timeout/stalled-job handling.
+- Worker independence from API lifetime.
+- Re-scrape duplicate prevention.
+- Cosmetic verification noise normalization.
+- Real source content mutation behind stable canonical URLs.
 
 ## Time-box decisions
 
-We will not build authentication, automated scheduling, a generic portal framework, distributed tracing infrastructure, or a large design system. If time remains after all acceptance criteria and tests pass, additional observability can be added without changing the core architecture.
+We do not build authentication, automated scheduling, a generic portal framework, distributed tracing infrastructure, or a large design system. These are deliberate cuts so the implementation stays focused on the required reliable single-source pipeline.
