@@ -82,9 +82,29 @@ export const promotionsQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+export const paginationSchema = z.object({
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+  totalItems: z.number().int().nonnegative(),
+  totalPages: z.number().int().nonnegative(),
+});
+
+export const promotionsPageSchema = z.object({
+  items: z.array(promotionSchema),
+  pagination: paginationSchema,
+});
+
+export const brandSummarySchema = brandSchema.extend({
+  promotionCount: z.number().int().nonnegative(),
+});
+
+export const brandsResponseSchema = z.object({ items: z.array(brandSummarySchema) });
+
 export type Brand = z.infer<typeof brandSchema>;
 export type Promotion = z.infer<typeof promotionSchema>;
 export type ScrapeRun = z.infer<typeof scrapeRunSchema>;
 export type VerificationReport = z.infer<typeof verificationReportSchema>;
 export type VerificationDiscrepancy = z.infer<typeof verificationDiscrepancySchema>;
 export type PromotionsQuery = z.infer<typeof promotionsQuerySchema>;
+export type PromotionsPage = z.infer<typeof promotionsPageSchema>;
+export type BrandSummary = z.infer<typeof brandSummarySchema>;
