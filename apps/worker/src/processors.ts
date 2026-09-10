@@ -1,15 +1,15 @@
 import { Op } from 'sequelize';
 import { BrandModel, PromotionModel, ScrapeRunModel, VerificationRunModel, VerificationDiscrepancyModel } from '@promotions/database';
-import { scrapePromenade, type ScrapedPromotion } from '@promotions/scraper';
+import { canonicalizeUrl, normalizeWhitespace, scrapePromenade, type ScrapedPromotion, type ScraperConfig } from '@promotions/scraper';
 
-function scraperConfig() {
-  return {
-    listingUrl: process.env.SOURCE_PORTAL_URL,
-    userAgent: process.env.SCRAPER_USER_AGENT,
-    requestDelayMs: process.env.SCRAPER_REQUEST_DELAY_MS ? Number(process.env.SCRAPER_REQUEST_DELAY_MS) : undefined,
-    concurrency: process.env.SCRAPER_CONCURRENCY ? Number(process.env.SCRAPER_CONCURRENCY) : undefined,
-    navigationTimeoutMs: process.env.SCRAPER_NAVIGATION_TIMEOUT_MS ? Number(process.env.SCRAPER_NAVIGATION_TIMEOUT_MS) : undefined,
-  };
+function scraperConfig(): Partial<ScraperConfig> {
+  const config: Partial<ScraperConfig> = {};
+  if (process.env.SOURCE_PORTAL_URL) config.listingUrl = process.env.SOURCE_PORTAL_URL;
+  if (process.env.SCRAPER_USER_AGENT) config.userAgent = process.env.SCRAPER_USER_AGENT;
+  if (process.env.SCRAPER_REQUEST_DELAY_MS) config.requestDelayMs = Number(process.env.SCRAPER_REQUEST_DELAY_MS);
+  if (process.env.SCRAPER_CONCURRENCY) config.concurrency = Number(process.env.SCRAPER_CONCURRENCY);
+  if (process.env.SCRAPER_NAVIGATION_TIMEOUT_MS) config.navigationTimeoutMs = Number(process.env.SCRAPER_NAVIGATION_TIMEOUT_MS);
+  return config;
 }
 
 export async function persistPromotion(promotion: ScrapedPromotion, now = new Date()): Promise<'persisted' | 'updated'> {
@@ -69,12 +69,35 @@ export async function processScrape(runId: string): Promise<void> {
   }
 }
 
+function stableSocialLinks(value: Record<string, string>): string {
+  return JSON.stringify(Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))));
+}
+
+export function normalizeComparableValue(field: string, value: string | null): string | null {
+  if (value === null) return null;
+  if (field === 'brand.socialLinks') {
+    try { return stableSocialLinks(JSON.parse(value) as Record<string, string>); } catch { return normalizeWhitespace(value); }
+  }
+  if (field === 'imageUrl') {
+    try {
+      const url = new URL(value);
+      url.search = '';
+      url.hash = '';
+      return canonicalizeUrl(url.toString());
+    } catch { return normalizeWhitespace(value); }
+  }
+  if (field.endsWith('Url') || field === 'canonicalUrl') {
+    try { return canonicalizeUrl(value); } catch { return normalizeWhitespace(value); }
+  }
+  return normalizeWhitespace(value);
+}
+
 function comparableFields(stored: PromotionModel & { brand?: BrandModel }, live: ScrapedPromotion): Array<[string, string | null, string | null]> {
   return [
     ['name', stored.name, live.name], ['description', stored.description, live.description], ['imageUrl', stored.imageUrl, live.imageUrl],
     ['startDate', stored.startDate, live.startDate], ['endDate', stored.endDate, live.endDate], ['canonicalUrl', stored.canonicalUrl, live.canonicalUrl],
     ['brand.name', stored.brand?.name ?? null, live.brand.name], ['brand.websiteUrl', stored.brand?.websiteUrl ?? null, live.brand.websiteUrl],
-    ['brand.hours', stored.brand?.hours ?? null, live.brand.hours], ['brand.socialLinks', JSON.stringify(stored.brand?.socialLinks ?? {}), JSON.stringify(live.brand.socialLinks)],
+    ['brand.hours', stored.brand?.hours ?? null, live.brand.hours], ['brand.socialLinks', stableSocialLinks(stored.brand?.socialLinks ?? {}), stableSocialLinks(live.brand.socialLinks)],
   ];
 }
 
@@ -97,7 +120,7 @@ export async function processVerification(runId: string): Promise<void> {
       }
       let changed = false;
       for (const [field, before, after] of comparableFields(promotion, live)) {
-        if (before !== after) {
+        if (normalizeComparableValue(field, before) !== normalizeComparableValue(field, after)) {
           changed = true;
           discrepancyCount += 1;
           await VerificationDiscrepancyModel.create({ verificationRunId: runId, promotionId: promotion.id, kind: 'changed', field, before, after, reason: null });

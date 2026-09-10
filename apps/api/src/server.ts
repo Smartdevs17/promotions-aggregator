@@ -8,7 +8,7 @@ if (!databaseUrl || !redisUrl) throw new Error('DATABASE_URL and REDIS_URL are r
 
 const database = createDatabase({ url: databaseUrl });
 const queues = createQueues(redisUrl);
-const app = createApp({ database, scrapeQueue: queues.scrapeQueue, verifyQueue: queues.verifyQueue });
+const app = createApp({ database, redisConnection: queues.connection, scrapeQueue: queues.scrapeQueue, verifyQueue: queues.verifyQueue });
 const port = Number(process.env.API_PORT ?? 4000);
 const server = app.listen(port, () => console.log(`API listening on :${port}`));
 

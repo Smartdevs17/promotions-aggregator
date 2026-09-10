@@ -1,20 +1,21 @@
 import { Queue } from 'bullmq';
-import IORedis from 'ioredis';
+import { Redis } from 'ioredis';
 
 export const SCRAPE_QUEUE = 'scrape';
 export const VERIFY_QUEUE = 'verify';
 
 export type ScrapeJobPayload = { runId: string };
 export type VerifyJobPayload = { runId: string };
+export type RedisConnection = Redis;
 
-export function createRedisConnection(url: string): IORedis {
-  return new IORedis(url, { maxRetriesPerRequest: null, enableReadyCheck: true });
+export function createRedisConnection(url: string): Redis {
+  return new Redis(url, { maxRetriesPerRequest: null, enableReadyCheck: true });
 }
 
 export function createQueues(redisUrl: string): {
   scrapeQueue: Queue<ScrapeJobPayload>;
   verifyQueue: Queue<VerifyJobPayload>;
-  connection: IORedis;
+  connection: Redis;
 } {
   const connection = createRedisConnection(redisUrl);
   const defaultJobOptions = {

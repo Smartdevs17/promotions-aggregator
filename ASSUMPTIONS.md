@@ -19,6 +19,7 @@ This file records interpretations of ambiguous parts of the take-home brief and 
 13. **Politeness.** We will use bounded concurrency, delay/jitter, request timeouts, a descriptive user agent, and inspect robots.txt before finalizing the request policy.
 14. **UI scope.** The UI is functional rather than a full design system. Run-health information is included because it directly supports the operational goal of detecting quiet scraper failure.
 15. **Local operation.** Docker Compose is the canonical reviewer path and will start the application services, Redis, and PostgreSQL. Development commands outside Docker may also be documented for convenience.
+16. **Worker timeout.** BullMQ jobs are bounded by `JOB_TIMEOUT_MS`, defaulting to 10 minutes. This accommodates the observed single-source crawl while preventing a worker promise from running indefinitely.
 
 ## Discoveries during implementation
 
@@ -29,3 +30,4 @@ This file records interpretations of ambiguous parts of the take-home brief and 
 - `robots.txt` allows the relevant public sales, deals, and stores paths, declares `Crawl-delay: 60` for `User-agent: *`, and disallows unrelated paths such as profile, admin, live-update, and sign-in. The scraper stays on same-origin listing, deal, and store pages with bounded concurrency, retries, and a request delay; production scheduling should honor the published crawl delay.
 - Promotion dates are not exposed as machine-readable dates on the inspected detail pages; pages show relative labels such as “Ends Today” or “Ends 9/17”. The scraper leaves `startDate` and `endDate` as `null` rather than inventing a year or date.
 - Canonical promotion identity is the normalized `/deals/{numeric-id}` URL hashed with SHA-256. Tracking parameters, fragments, and trailing slashes do not change `sourceKey`; no better public stable promotion identifier was found than the numeric deal URL itself.
+- Repeated live verification during async validation showed that some deal pages can change their displayed promotion/tenant content between crawls while retaining the same deal URL. The verifier reports these as explicit semantic changes; it does not silently treat them as clean.
