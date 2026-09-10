@@ -1,30 +1,76 @@
 # Promotions Aggregator
 
-A production-style, single-mall promotions pipeline for The Promenade Shops at Briargate. It scrapes and enriches promotions asynchronously, persists them in PostgreSQL, verifies them against the live source, and serves a small reviewer-friendly Next.js UI.
+A production-style, single-mall promotions pipeline for The Promenade Shops at Briargate. It scrapes and enriches promotions asynchronously, persists them in PostgreSQL, verifies them against the live source, and serves a reviewer-friendly Next.js UI.
 
 ## Quick start
 
-Prerequisites: Docker with Compose, and Node.js/pnpm for host-side development and tests.
+Prerequisite: Docker with Docker Compose. Node.js and pnpm are only needed for host-side development/tests.
 
 ```bash
-pnpm install --frozen-lockfile
 docker compose up --build
 ```
 
-Open [the UI](http://localhost:3000), [the API](http://localhost:4000), or [API docs](http://localhost:4000/docs). The Compose stack starts PostgreSQL, Redis, migrations, the API, an independent Playwright worker, and the web application.
+Then open:
 
-In the UI, click **Run scrape**, wait for the asynchronous run panel to complete, browse/search/filter the persisted promotions, then click **Verify data** to inspect verification status and any source-backed discrepancies. The equivalent API operations are `POST /scrape` and `POST /verify`.
+- UI: http://localhost:3000
+- API: http://localhost:4000
+- API docs: http://localhost:4000/docs
+- OpenAPI JSON: http://localhost:4000/openapi.json
+
+The Compose stack starts PostgreSQL, Redis, migrations, the Express API, an independent Playwright worker, and the Next.js web application.
+
+### Reviewer flow
+
+1. Open the UI.
+2. Click **Run scrape**. The request returns immediately and BullMQ processes the live scrape in the worker.
+3. Wait for the run-health panel to reach a terminal state.
+4. Browse, search, filter, paginate, and switch to **Group by brand**.
+5. Inspect brand hours/website metadata and canonical source links.
+6. Click **Verify data** and inspect verification status/discrepancies.
+
+Equivalent API triggers are `POST /scrape` and `POST /verify`.
+
+## API
+
+The required endpoints are:
+
+- `GET /health`
+- `GET /promotions?search=&startDate=&endDate=&brand=&page=&pageSize=`
+- `GET /promotions/:id`
+- `GET /brands`
+- `POST /scrape`
+- `GET /scrape/:jobId`
+- `POST /verify`
+- `GET /verify/:runId`
+
+Read requests are runtime-validated and typed through shared Zod contracts. Scrape and verification triggers never execute source work inline.
 
 ## Configuration
 
-Copy `.env.example` for host-side development. The important variables are:
+Copy `.env.example` for host-side development. Important variables include:
 
-- `DATABASE_URL`: PostgreSQL connection string
-- `REDIS_URL`: Redis connection string
-- `SOURCE_PORTAL_URL`: the mall sales listing
-- `NEXT_PUBLIC_API_URL`: browser-facing API URL; this is embedded at web build time (Compose uses `http://localhost:4000`)
+- `DATABASE_URL` — PostgreSQL connection string
+- `TEST_DATABASE_URL` — integration-test database
+- `REDIS_URL` — Redis connection string
+- `SOURCE_PORTAL_URL` — mall promotions listing
+- `SCRAPER_USER_AGENT` — scraper user agent
+- `SCRAPER_REQUEST_DELAY_MS` — source-request delay
+- `SCRAPER_CONCURRENCY` — bounded scraper concurrency
+- `JOB_TIMEOUT_MS` — worker execution timeout
+- `QUEUE_SUBMISSION_TIMEOUT_MS` — API queue submission timeout
+- `NEXT_PUBLIC_API_URL` — browser-facing API URL embedded into the web build
+
+Compose configures the browser-facing API as `http://localhost:4000`.
 
 ## Development and tests
+
+Install workspace dependencies:
+
+```bash
+pnpm install --frozen-lockfile
+```
+
+Then run:
 
 ```bash
 pnpm typecheck
@@ -34,10 +80,47 @@ pnpm test:db
 pnpm test:e2e
 ```
 
-For host-side web development, start the backend services/API and run `NEXT_PUBLIC_API_URL=http://localhost:4000 pnpm --filter @promotions/web dev`. Playwright E2E starts the web app automatically when one is not already running; the browser tests use realistic intercepted API contracts for deterministic interaction coverage. The Docker-backed UI flow should also be checked with `docker compose up --build`.
+For host-side web development, start the backend services/API and run:
 
-## Architecture notes
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:4000 pnpm --filter @promotions/web dev
+```
 
-The browser never scrapes directly. It calls the Express API, which creates durable run records and enqueues BullMQ jobs; the separate worker runs Playwright, persists idempotently, and updates progress. Brand metadata is joined into promotion responses and exposed in group-by-brand mode.
+Playwright E2E uses realistic intercepted API responses for deterministic interaction coverage. The complete Docker-backed flow has also been validated separately against the live mall source.
 
-The source can mutate the content assigned to a stable `/deals/{id}` URL. Verification intentionally reports meaningful changes instead of treating them as a transport failure. Fields unavailable at the source remain `null` (or `{}` for social links); see [`ASSUMPTIONS.md`](./ASSUMPTIONS.md) and [`DESIGN.md`](./DESIGN.md) for the detailed decisions.
+## Architecture
+
+```text
+Browser / Next.js
+       |
+       v
+   Express API
+       |
+       +---- PostgreSQL (reads + durable run metadata)
+       |
+       v
+   Redis / BullMQ
+       |
+       v
+ Separate Worker
+       |
+       v
+ Playwright + parser
+       |
+       v
+ Live mall portal
+```
+
+The worker persists normalized brands/promotions back to PostgreSQL. Verification re-crawls the live source and compares meaningful normalized values with persisted records.
+
+See `DESIGN.md` for implementation decisions, `ASSUMPTIONS.md` for source discoveries/ambiguities, and `docs/ASSESSMENT_AUDIT.md` for an acceptance-criteria map.
+
+## Source behavior and limitations
+
+- The project intentionally supports one mall portal only.
+- Brand website and opening-hours metadata are populated where the tenant pages expose them.
+- The inspected tenant pages did not expose tenant-specific social links, so `socialLinks` remains `{}` instead of incorrectly inheriting mall-wide footer links.
+- Promotion validity dates are currently not exposed as reliable machine-readable dates, so unavailable dates remain `null`.
+- The portal can mutate promotion/tenant content behind a stable `/deals/{id}` URL. Verification intentionally surfaces these source-backed semantic changes, so a successful verification run can legitimately be non-clean.
+- Group-by-brand operates over the currently paginated result set.
+- Authentication, production deployment, automated scheduling, and a generic multi-source framework are deliberate non-goals for this take-home.
