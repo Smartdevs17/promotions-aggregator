@@ -80,6 +80,9 @@ export const promotionsQuerySchema = z.object({
   brand: z.string().trim().min(1).optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
+}).refine(({ startDate, endDate }) => !startDate || !endDate || startDate <= endDate, {
+  path: ['endDate'],
+  message: 'endDate must be on or after startDate',
 });
 
 export const paginationSchema = z.object({

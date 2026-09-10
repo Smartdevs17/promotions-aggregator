@@ -55,6 +55,10 @@ describe('read API', () => {
 
     const invalid = await request(createApp(deps())).get('/promotions?page=0');
     expect(invalid.status).toBe(400);
+    for (const query of ['page=-1', 'pageSize=0', 'pageSize=101', 'page=abc']) {
+      expect((await request(createApp(deps())).get(`/promotions?${query}`)).status).toBe(400);
+    }
+    expect((await request(createApp(deps())).get('/promotions?startDate=2026-09-30&endDate=2026-09-01')).status).toBe(400);
   });
 
   it('returns a promotion detail and 404 for missing ids', async () => {
@@ -63,7 +67,8 @@ describe('read API', () => {
     expect(response.body.brand.name).toBe('Example Brand');
 
     models.promotionFindByPk.mockResolvedValueOnce(null);
-    expect((await request(createApp(deps())).get('/promotions/missing')).status).toBe(404);
+    expect((await request(createApp(deps())).get('/promotions/00000000-0000-4000-8000-000000000099')).status).toBe(404);
+    expect((await request(createApp(deps())).get('/promotions/not-a-uuid')).status).toBe(400);
   });
 
   it('returns brand metadata with promotion counts', async () => {
@@ -71,5 +76,21 @@ describe('read API', () => {
     expect(response.status).toBe(200);
     expect(response.body.items[0].promotionCount).toBe(2);
     expect(response.body.items[0].websiteUrl).toBe('https://brand.example/');
+  });
+
+  it('returns an empty page without losing the filtered total', async () => {
+    models.promotionFindAndCountAll.mockResolvedValueOnce({ rows: [], count: 1 });
+    const response = await request(createApp(deps())).get('/promotions?page=2&pageSize=1');
+    expect(response.status).toBe(200);
+    expect(response.body.items).toEqual([]);
+    expect(response.body.pagination).toEqual({ page: 2, pageSize: 1, totalItems: 1, totalPages: 1 });
+  });
+
+  it('exposes lightweight OpenAPI documentation', async () => {
+    const document = await request(createApp(deps())).get('/openapi.json');
+    expect(document.status).toBe(200);
+    expect(document.body.paths['/promotions']).toBeDefined();
+    expect(document.body.paths['/verify/{runId}']).toBeDefined();
+    expect((await request(createApp(deps())).get('/docs')).status).toBe(200);
   });
 });

@@ -15,6 +15,22 @@ export type AppDependencies = {
 };
 
 const queueSubmissionTimeoutMs = Number(process.env.QUEUE_SUBMISSION_TIMEOUT_MS ?? 5_000);
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const openApiDocument = {
+  openapi: '3.0.3',
+  info: { title: 'Promotions Aggregator API', version: '1.0.0' },
+  paths: {
+    '/health': { get: { summary: 'Report API, database, and Redis health' } },
+    '/promotions': { get: { summary: 'List promotions with search, filters, and pagination' } },
+    '/promotions/{id}': { get: { summary: 'Get one promotion and its brand metadata' } },
+    '/brands': { get: { summary: 'List brands with promotion counts' } },
+    '/scrape': { post: { summary: 'Queue an asynchronous scrape' } },
+    '/scrape/{jobId}': { get: { summary: 'Get scrape job progress and outcome' } },
+    '/verify': { post: { summary: 'Queue an asynchronous verification' } },
+    '/verify/{runId}': { get: { summary: 'Get verification progress and discrepancies' } },
+  },
+} as const;
 
 async function enqueue(add: () => Promise<unknown>): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -70,6 +86,11 @@ export function createApp(deps: AppDependencies): Express {
   app.use(cors());
   app.use(express.json());
 
+  app.get('/openapi.json', (_req, res) => res.json(openApiDocument));
+  app.get('/docs', (_req, res) => {
+    res.type('html').send('<!doctype html><title>Promotions Aggregator API</title><h1>Promotions Aggregator API</h1><p><a href="/openapi.json">OpenAPI JSON</a></p>');
+  });
+
   app.get('/health', async (_req, res) => {
     try {
       await deps.database.authenticate();
@@ -108,6 +129,7 @@ export function createApp(deps: AppDependencies): Express {
 
   app.get('/promotions/:id', async (req, res, next) => {
     try {
+      if (!uuidPattern.test(req.params.id)) return void res.status(400).json({ error: 'Invalid promotion id' });
       const promotion = await PromotionModel.findByPk(req.params.id, { include: [{ association: 'brand', required: true }] }) as PromotionWithBrand | null;
       if (!promotion) return void res.status(404).json({ error: 'Promotion not found' });
       res.json(serializePromotion(promotion));

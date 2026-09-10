@@ -9,7 +9,7 @@ This file records interpretations of ambiguous parts of the take-home brief and 
 3. **Missing values.** Unavailable scalar values are represented as `null`; unavailable collections are represented as empty arrays. We do not invent brand metadata.
 4. **Brands are normalized.** A brand is stored once and referenced by promotions because multiple promotions may share the same brand metadata.
 5. **Date filtering.** A promotion matches a requested date window when its known validity interval overlaps that window. Open-ended source dates are supported.
-6. **Search semantics.** Keyword search is case-insensitive and covers promotion name and brand name as explicitly required; description may also be searched where useful.
+6. **Search semantics.** Keyword search is case-insensitive and covers promotion name and brand name as explicitly required; the MVP uses partial matching (`ILIKE`) for both keyword search and the brand filter.
 7. **Verification scope.** Verification checks all persisted promotions for this single-mall MVP rather than sampling. Source requests made during verification use the same politeness controls as scraping.
 8. **Meaningful discrepancies.** Business-semantic changes are reported. Pure whitespace changes, harmless URL normalization, and transient image-CDN query parameters are ignored to avoid noisy reports.
 9. **Disappeared records.** A persisted promotion whose canonical source record can no longer be found is reported as `missing_at_source`; it is not automatically deleted during verification.

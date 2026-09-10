@@ -20,6 +20,9 @@ importers:
       '@promotions/jobs':
         specifier: workspace:*
         version: link:../../packages/jobs
+      '@promotions/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       bullmq:
         specifier: ^5.58.5
         version: 5.81.4

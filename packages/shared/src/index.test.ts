@@ -11,6 +11,10 @@ describe('shared contracts', () => {
     expect(() => promotionsQuerySchema.parse({ pageSize: 101 })).toThrow();
   });
 
+  it('rejects a reversed date window', () => {
+    expect(() => promotionsQuerySchema.parse({ startDate: '2026-09-30', endDate: '2026-09-01' })).toThrow();
+  });
+
   it('accepts a complete promotion contract', () => {
     const now = new Date().toISOString();
     const parsed = promotionSchema.parse({
