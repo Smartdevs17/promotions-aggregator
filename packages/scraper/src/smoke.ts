@@ -1,13 +1,15 @@
 import { scrapePromenade } from './promenade.js';
+import type { ScraperConfig } from './types.js';
 
 async function main(): Promise<void> {
-  const result = await scrapePromenade({
-    listingUrl: process.env.SOURCE_PORTAL_URL,
-    userAgent: process.env.SCRAPER_USER_AGENT,
-    requestDelayMs: process.env.SCRAPER_REQUEST_DELAY_MS ? Number(process.env.SCRAPER_REQUEST_DELAY_MS) : undefined,
-    concurrency: process.env.SCRAPER_CONCURRENCY ? Number(process.env.SCRAPER_CONCURRENCY) : undefined,
-    navigationTimeoutMs: process.env.SCRAPER_NAVIGATION_TIMEOUT_MS ? Number(process.env.SCRAPER_NAVIGATION_TIMEOUT_MS) : undefined,
-  });
+  const overrides: Partial<ScraperConfig> = {};
+  if (process.env.SOURCE_PORTAL_URL) overrides.listingUrl = process.env.SOURCE_PORTAL_URL;
+  if (process.env.SCRAPER_USER_AGENT) overrides.userAgent = process.env.SCRAPER_USER_AGENT;
+  if (process.env.SCRAPER_REQUEST_DELAY_MS) overrides.requestDelayMs = Number(process.env.SCRAPER_REQUEST_DELAY_MS);
+  if (process.env.SCRAPER_CONCURRENCY) overrides.concurrency = Number(process.env.SCRAPER_CONCURRENCY);
+  if (process.env.SCRAPER_NAVIGATION_TIMEOUT_MS) overrides.navigationTimeoutMs = Number(process.env.SCRAPER_NAVIGATION_TIMEOUT_MS);
+
+  const result = await scrapePromenade(overrides);
 
   console.log(JSON.stringify({
     sourceHealth: result.sourceHealth,
