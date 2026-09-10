@@ -1,10 +1,11 @@
 import express, { type Express } from 'express';
 import cors from 'cors';
 import { randomUUID } from 'node:crypto';
-import type { Sequelize } from 'sequelize';
+import { Op, fn, col, type Sequelize, type WhereOptions } from 'sequelize';
 import type { Queue } from 'bullmq';
-import { ScrapeRunModel, VerificationRunModel } from '@promotions/database';
+import { BrandModel, PromotionModel, ScrapeRunModel, VerificationRunModel } from '@promotions/database';
 import type { RedisConnection, ScrapeJobPayload, VerifyJobPayload } from '@promotions/jobs';
+import { promotionsQuerySchema } from '@promotions/shared';
 
 export type AppDependencies = {
   database: Sequelize;
@@ -29,6 +30,41 @@ async function enqueue(add: () => Promise<unknown>): Promise<void> {
   }
 }
 
+type PromotionWithBrand = PromotionModel & { brand?: BrandModel };
+
+function serializeBrand(brand: BrandModel) {
+  return {
+    id: brand.id,
+    name: brand.name,
+    normalizedName: brand.normalizedName,
+    sourceUrl: brand.sourceUrl,
+    websiteUrl: brand.websiteUrl,
+    hours: brand.hours,
+    socialLinks: brand.socialLinks,
+    scrapedAt: brand.scrapedAt.toISOString(),
+    updatedAt: brand.updatedAt.toISOString(),
+  };
+}
+
+function serializePromotion(promotion: PromotionWithBrand) {
+  if (!promotion.brand) throw new Error(`Promotion ${promotion.id} is missing its brand association`);
+  return {
+    id: promotion.id,
+    sourceKey: promotion.sourceKey,
+    name: promotion.name,
+    description: promotion.description,
+    imageUrl: promotion.imageUrl,
+    startDate: promotion.startDate,
+    endDate: promotion.endDate,
+    canonicalUrl: promotion.canonicalUrl,
+    sourcePortal: promotion.sourcePortal,
+    scrapedAt: promotion.scrapedAt.toISOString(),
+    lastVerifiedAt: promotion.lastVerifiedAt?.toISOString() ?? null,
+    verificationStatus: promotion.verificationStatus,
+    brand: serializeBrand(promotion.brand),
+  };
+}
+
 export function createApp(deps: AppDependencies): Express {
   const app = express();
   app.use(cors());
@@ -42,6 +78,52 @@ export function createApp(deps: AppDependencies): Express {
     } catch (error: unknown) {
       res.status(503).json({ status: 'degraded', error: error instanceof Error ? error.message : 'Unknown health error' });
     }
+  });
+
+  app.get('/promotions', async (req, res, next) => {
+    try {
+      const parsed = promotionsQuerySchema.safeParse(req.query);
+      if (!parsed.success) return void res.status(400).json({ error: 'Invalid query parameters', details: parsed.error.flatten() });
+      const { search, startDate, endDate, brand, page, pageSize } = parsed.data;
+      const where: WhereOptions = {};
+      const clauses: WhereOptions[] = [];
+      if (search) clauses.push({ [Op.or]: [{ name: { [Op.iLike]: `%${search}%` } }, { '$brand.name$': { [Op.iLike]: `%${search}%` } }] });
+      if (startDate) clauses.push({ [Op.or]: [{ endDate: null }, { endDate: { [Op.gte]: startDate } }] });
+      if (endDate) clauses.push({ [Op.or]: [{ startDate: null }, { startDate: { [Op.lte]: endDate } }] });
+      if (brand) clauses.push({ '$brand.name$': { [Op.iLike]: `%${brand}%` } });
+      if (clauses.length) Object.assign(where, { [Op.and]: clauses });
+
+      const { rows, count } = await PromotionModel.findAndCountAll({
+        where,
+        include: [{ association: 'brand', required: true }],
+        distinct: true,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        order: [['name', 'ASC'], ['id', 'ASC']],
+      });
+      const items = (rows as PromotionWithBrand[]).map(serializePromotion);
+      res.json({ items, pagination: { page, pageSize, totalItems: count, totalPages: count === 0 ? 0 : Math.ceil(count / pageSize) } });
+    } catch (error: unknown) { next(error); }
+  });
+
+  app.get('/promotions/:id', async (req, res, next) => {
+    try {
+      const promotion = await PromotionModel.findByPk(req.params.id, { include: [{ association: 'brand', required: true }] }) as PromotionWithBrand | null;
+      if (!promotion) return void res.status(404).json({ error: 'Promotion not found' });
+      res.json(serializePromotion(promotion));
+    } catch (error: unknown) { next(error); }
+  });
+
+  app.get('/brands', async (_req, res, next) => {
+    try {
+      const brands = await BrandModel.findAll({
+        attributes: { include: [[fn('COUNT', col('promotions.id')), 'promotionCount']] },
+        include: [{ association: 'promotions', attributes: [], required: false }],
+        group: ['BrandModel.id'],
+        order: [['name', 'ASC']],
+      });
+      res.json({ items: brands.map((brand) => ({ ...serializeBrand(brand), promotionCount: Number(brand.get('promotionCount') ?? 0) })) });
+    } catch (error: unknown) { next(error); }
   });
 
   app.post('/scrape', async (_req, res, next) => {
