@@ -88,3 +88,5 @@ export type ScrapeRun = z.infer<typeof scrapeRunSchema>;
 export type VerificationReport = z.infer<typeof verificationReportSchema>;
 export type VerificationDiscrepancy = z.infer<typeof verificationDiscrepancySchema>;
 export type PromotionsQuery = z.infer<typeof promotionsQuerySchema>;
+
+export * from './jobs.js';
