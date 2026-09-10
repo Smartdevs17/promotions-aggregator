@@ -27,7 +27,7 @@ export async function up({ context: queryInterface }: { context: QueryInterface 
     source_portal: { type: DataTypes.TEXT, allowNull: false },
     scraped_at: { type: DataTypes.DATE, allowNull: false },
     last_verified_at: { type: DataTypes.DATE, allowNull: true },
-    verification_status: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'pending' },
+    verification_status: { type: DataTypes.ENUM('pending', 'verified', 'changed', 'missing', 'failed'), allowNull: false, defaultValue: 'pending' },
     created_at: { type: DataTypes.DATE, allowNull: false },
     updated_at: { type: DataTypes.DATE, allowNull: false },
   });
@@ -39,13 +39,13 @@ export async function up({ context: queryInterface }: { context: QueryInterface 
   await queryInterface.createTable('scrape_runs', {
     id: { type: DataTypes.UUID, primaryKey: true, allowNull: false },
     job_id: { type: DataTypes.STRING(255), allowNull: false, unique: true },
-    state: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'queued' },
+    state: { type: DataTypes.ENUM('queued', 'active', 'completed', 'failed', 'suspicious'), allowNull: false, defaultValue: 'queued' },
     attempted: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     persisted: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     updated: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     skipped: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     failed: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
-    source_health: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'unknown' },
+    source_health: { type: DataTypes.ENUM('unknown', 'healthy', 'suspicious', 'unreachable'), allowNull: false, defaultValue: 'unknown' },
     error_summary: { type: DataTypes.TEXT, allowNull: true },
     started_at: { type: DataTypes.DATE, allowNull: true },
     finished_at: { type: DataTypes.DATE, allowNull: true },
@@ -59,7 +59,7 @@ export async function up({ context: queryInterface }: { context: QueryInterface 
   await queryInterface.createTable('verification_runs', {
     id: { type: DataTypes.UUID, primaryKey: true, allowNull: false },
     job_id: { type: DataTypes.STRING(255), allowNull: false, unique: true },
-    state: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'queued' },
+    state: { type: DataTypes.ENUM('queued', 'active', 'completed', 'failed', 'suspicious'), allowNull: false, defaultValue: 'queued' },
     checked: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     discrepancy_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     clean: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
@@ -76,7 +76,7 @@ export async function up({ context: queryInterface }: { context: QueryInterface 
     id: { type: DataTypes.UUID, primaryKey: true, allowNull: false },
     verification_run_id: { type: DataTypes.UUID, allowNull: false, references: { model: 'verification_runs', key: 'id' }, onDelete: 'CASCADE' },
     promotion_id: { type: DataTypes.UUID, allowNull: false, references: { model: 'promotions', key: 'id' }, onDelete: 'CASCADE' },
-    kind: { type: DataTypes.STRING(32), allowNull: false },
+    kind: { type: DataTypes.ENUM('missing', 'changed', 'unverifiable'), allowNull: false },
     field: { type: DataTypes.STRING(255), allowNull: true },
     before: { type: DataTypes.TEXT, allowNull: true },
     after: { type: DataTypes.TEXT, allowNull: true },
@@ -89,9 +89,11 @@ export async function up({ context: queryInterface }: { context: QueryInterface 
 }
 
 export async function down({ context: queryInterface }: { context: QueryInterface }): Promise<void> {
-  await queryInterface.dropTable('verification_discrepancies');
-  await queryInterface.dropTable('verification_runs');
-  await queryInterface.dropTable('scrape_runs');
-  await queryInterface.dropTable('promotions');
-  await queryInterface.dropTable('brands');
+  // Pass an options object because Sequelize's Postgres dropTable implementation
+  // mutates it while cleaning up model-backed enum metadata.
+  await queryInterface.dropTable('verification_discrepancies', {});
+  await queryInterface.dropTable('verification_runs', {});
+  await queryInterface.dropTable('scrape_runs', {});
+  await queryInterface.dropTable('promotions', {});
+  await queryInterface.dropTable('brands', {});
 }
