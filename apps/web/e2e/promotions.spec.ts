@@ -73,12 +73,17 @@ test.describe('promotions dashboard', () => {
 
   test('shows asynchronous scrape and verification status without freezing', async ({ page }) => {
     await page.getByRole('button', { name: 'Run scrape' }).click();
+    await expect(page.getByRole('status')).toContainText('Scrape started');
+    await expect(page.getByRole('button', { name: 'Starting…' })).toBeDisabled();
     await expect(page.getByText('Status', { exact: true })).toBeVisible();
     await expect(page.getByText('completed', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('status')).toContainText('Scrape completed');
     await expect(page.getByText('Attempted', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Verify data' }).click();
+    await expect(page.getByRole('status')).toContainText('Verification started');
     await expect(page.getByText('Discrepancies', { exact: true })).toBeVisible();
     await expect(page.getByText('Clean', { exact: true })).toBeVisible({ timeout: 5_000 });
     await expect(page.getByText('no', { exact: true })).toBeVisible();
+    await expect(page.getByRole('status')).toContainText('Verification completed');
   });
 });

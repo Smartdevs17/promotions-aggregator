@@ -1,0 +1,54 @@
+services:
+  - type: web
+    name: promotions-aggregator-api
+    repo: https://github.com/Smartdevs17/promotions-aggregator
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    dockerfilePath: ./docker/api.Dockerfile
+    dockerContext: .
+    dockerCommand: pnpm db:migrate && pnpm --filter @promotions/api start
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SOURCE_PORTAL_URL
+        value: https://www.thepromenadeshopsatbriargate.com/sales
+      - key: SCRAPER_USER_AGENT
+        value: PromotionsAggregatorTakeHome/1.0
+      - key: SCRAPER_REQUEST_DELAY_MS
+        value: "500"
+      - key: SCRAPER_CONCURRENCY
+        value: "2"
+      - key: JOB_TIMEOUT_MS
+        value: "600000"
+      - key: QUEUE_SUBMISSION_TIMEOUT_MS
+        value: "5000"
+
+  - type: worker
+    name: promotions-aggregator-worker
+    repo: https://github.com/Smartdevs17/promotions-aggregator
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    dockerfilePath: ./docker/worker.Dockerfile
+    dockerContext: .
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SOURCE_PORTAL_URL
+        value: https://www.thepromenadeshopsatbriargate.com/sales
+      - key: SCRAPER_USER_AGENT
+        value: PromotionsAggregatorTakeHome/1.0
+      - key: SCRAPER_REQUEST_DELAY_MS
+        value: "500"
+      - key: SCRAPER_CONCURRENCY
+        value: "2"
+      - key: JOB_TIMEOUT_MS
+        value: "600000"

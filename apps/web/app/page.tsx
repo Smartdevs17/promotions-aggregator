@@ -6,6 +6,18 @@ import { brandsResponseSchema, promotionsPageSchema, scrapeRunSchema, verificati
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 type Run = Partial<ScrapeRun & VerificationReport> & { id?: string; runId?: string; jobId: string };
+type Toast = { tone: 'info' | 'success' | 'warning' | 'error'; message: string };
+
+function friendlyError(message: string | null | undefined, action: 'scrape' | 'verify' | 'api' = 'api'): string {
+  const value = message?.toLowerCase() ?? '';
+  if (value.includes('source portal was unreachable')) {
+    return `The mall website could not be reached. Check your internet or DNS connection, then try ${action === 'verify' ? 'verification' : 'the scrape'} again.`;
+  }
+  if (value.includes('failed to fetch') || value.includes('request failed') || value.includes('trigger failed')) {
+    return 'The API could not be reached. Make sure the backend is running, then try again.';
+  }
+  return message ?? 'Something went wrong. Please try again.';
+}
 
 async function getJson<T>(path: string, parse: (value: unknown) => T): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, { cache: 'no-store' });
@@ -23,7 +35,15 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [run, setRun] = useState<Run | null>(null);
-  const [triggering, setTriggering] = useState(false);
+  const [activeKind, setActiveKind] = useState<'scrape' | 'verify' | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const triggering = activeKind !== null;
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 5_000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   async function loadPromotions(nextPage = page): Promise<void> {
     setLoading(true); setError(null);
@@ -45,7 +65,8 @@ export default function HomePage() {
   }, [data.items]);
 
   async function trigger(kind: 'scrape' | 'verify'): Promise<void> {
-    setError(null); setTriggering(true);
+    const label = kind === 'scrape' ? 'Scrape' : 'Verification';
+    setError(null); setActiveKind(kind); setToast({ tone: 'info', message: `${label} started. The worker is processing it in the background.` });
     try {
       const response = await fetch(`${API_URL}/${kind}`, { method: 'POST' });
       if (!response.ok) throw new Error(`${kind} trigger failed (${response.status})`);
@@ -60,17 +81,33 @@ export default function HomePage() {
         if (latest.state !== undefined && ['completed', 'failed', 'suspicious'].includes(latest.state)) {
           terminal = true;
           if (kind === 'scrape' && latest.state !== 'failed') { setPage(1); await loadPromotions(1); }
+          if (latest.state === 'completed') {
+            const detail = kind === 'scrape' ? `${latest.persisted ?? 0} saved, ${latest.failed ?? 0} failed` : `${latest.discrepancyCount ?? 0} discrepancies found`;
+            setToast({ tone: 'success', message: `${label} completed — ${detail}.` });
+          } else if (latest.state === 'suspicious') {
+            setToast({ tone: 'warning', message: `${label} completed with a suspicious source result.` });
+          } else {
+            const message = friendlyError(latest.errorSummary, kind);
+            setToast({ tone: 'error', message: `${label} failed — ${message}` });
+          }
           break;
         }
       }
-      if (!terminal) setError(`${kind} did not finish before the polling timeout`);
-    } catch (err) { setError(err instanceof Error ? err.message : `Unable to run ${kind}`); }
-    finally { setTriggering(false); }
+      if (!terminal) {
+        const message = `${kind} did not finish before the polling timeout`;
+        setError(message); setToast({ tone: 'error', message });
+      }
+    } catch (err) {
+      const message = friendlyError(err instanceof Error ? err.message : `Unable to run ${kind}`, kind);
+      setError(message); setToast({ tone: 'error', message });
+    }
+    finally { setActiveKind(null); }
   }
 
   return <main>
-    <header className="hero"><div><p className="eyebrow">SINGLE-MALL MVP</p><h1>Promotions Aggregator</h1><p className="lede">Live offers from The Promenade Shops at Briargate, enriched with store metadata and verification status.</p></div><div className="actions"><button disabled={triggering} aria-busy={triggering} onClick={() => void trigger('scrape')}>Run scrape</button><button disabled={triggering} className="secondary" onClick={() => void trigger('verify')}>Verify data</button></div></header>
-    {run && <section className="run-panel" aria-live="polite"><div><span>Job</span><strong>{run.jobId.slice(0, 8)}…</strong></div><div><span>Status</span><strong>{run.state}</strong></div>{run.sourceHealth && <div><span>Source</span><strong>{run.sourceHealth}</strong></div>}{run.attempted !== undefined && <div><span>Attempted</span><strong>{run.attempted}</strong></div>}{run.persisted !== undefined && <div><span>Persisted</span><strong>{run.persisted}</strong></div>}{run.updated !== undefined && <div><span>Updated</span><strong>{run.updated}</strong></div>}{run.failed !== undefined && <div><span>Failed</span><strong>{run.failed}</strong></div>}{run.checked !== undefined && <div><span>Checked</span><strong>{run.checked}</strong></div>}{run.discrepancyCount !== undefined && <div><span>Discrepancies</span><strong>{run.discrepancyCount}</strong></div>}{run.clean !== undefined && <div><span>Clean</span><strong>{run.clean ? 'yes' : 'no'}</strong></div>}{run.errorSummary && <p className="error">{run.errorSummary}</p>}</section>}
+    <header className="hero"><div><p className="eyebrow">SINGLE-MALL MVP</p><h1>Promotions Aggregator</h1><p className="lede">Live offers from The Promenade Shops at Briargate, enriched with store metadata and verification status.</p></div><div className="actions"><button disabled={triggering} aria-busy={activeKind === 'scrape'} onClick={() => void trigger('scrape')}>{activeKind === 'scrape' && <span className="spinner" aria-hidden="true"/>}{activeKind === 'scrape' ? 'Starting…' : 'Run scrape'}</button><button disabled={triggering} aria-busy={activeKind === 'verify'} className="secondary" onClick={() => void trigger('verify')}>{activeKind === 'verify' && <span className="spinner" aria-hidden="true"/>}{activeKind === 'verify' ? 'Starting…' : 'Verify data'}</button></div></header>
+    {toast && <div className={`toast ${toast.tone}`} role={toast.tone === 'error' ? 'alert' : 'status'} aria-live="polite"><span className="toast-dot" aria-hidden="true"/>{toast.message}<button className="toast-close" aria-label="Dismiss notification" onClick={() => setToast(null)}>×</button></div>}
+    {run && <section className="run-panel" aria-live="polite"><div><span>Job</span><strong>{run.jobId.slice(0, 8)}…</strong></div><div><span>Status</span><strong>{run.state}</strong></div>{run.sourceHealth && <div><span>Source</span><strong>{run.sourceHealth}</strong></div>}{run.attempted !== undefined && <div><span>Attempted</span><strong>{run.attempted}</strong></div>}{run.persisted !== undefined && <div><span>Persisted</span><strong>{run.persisted}</strong></div>}{run.updated !== undefined && <div><span>Updated</span><strong>{run.updated}</strong></div>}{run.failed !== undefined && <div><span>Failed</span><strong>{run.failed}</strong></div>}{run.checked !== undefined && <div><span>Checked</span><strong>{run.checked}</strong></div>}{run.discrepancyCount !== undefined && <div><span>Discrepancies</span><strong>{run.discrepancyCount}</strong></div>}{run.clean !== undefined && <div><span>Clean</span><strong>{run.clean ? 'yes' : 'no'}</strong></div>}{run.errorSummary && <p className="error">{friendlyError(run.errorSummary, run.checked !== undefined ? 'verify' : 'scrape')}</p>}</section>}
     <section className="toolbar"><input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search promotion or brand…" aria-label="Search promotions"/><select value={brand} onChange={(e) => { setBrand(e.target.value); setPage(1); }} aria-label="Filter by brand"><option value="">All brands</option>{brands.map((item) => <option key={item.id} value={item.name}>{item.name} ({item.promotionCount})</option>)}</select><button className="toggle" aria-pressed={grouped} onClick={() => setGrouped((value) => !value)}>{grouped ? 'Flat view' : 'Group by brand'}</button></section>
     <div className="summary"><strong>{data.pagination.totalItems}</strong> promotions found</div>
     {error && <p className="error banner">{error}</p>}
