@@ -34,7 +34,7 @@ export async function up({ context: queryInterface }: { context: QueryInterface 
   await queryInterface.addIndex('promotions', ['source_portal', 'source_key'], { unique: true, name: 'promotions_source_identity_unique' });
   await queryInterface.addIndex('promotions', ['brand_id']);
   await queryInterface.addIndex('promotions', ['end_date']);
-  await queryInterface.addConstraint('promotions', { fields: ['start_date', 'end_date'], type: 'check', where: { end_date: { [Symbol.for('gte')]: { [Symbol.for('col')]: 'start_date' } } } as never, name: 'promotions_valid_date_range' });
+  await queryInterface.sequelize.query('ALTER TABLE promotions ADD CONSTRAINT promotions_valid_date_range CHECK (start_date IS NULL OR end_date IS NULL OR end_date >= start_date)');
 
   await queryInterface.createTable('scrape_runs', {
     id: { type: DataTypes.UUID, primaryKey: true, allowNull: false },
@@ -52,7 +52,7 @@ export async function up({ context: queryInterface }: { context: QueryInterface 
     created_at: { type: DataTypes.DATE, allowNull: false },
     updated_at: { type: DataTypes.DATE, allowNull: false },
   });
-  for (const field of ['attempted','persisted','updated','skipped','failed']) {
+  for (const field of ['attempted', 'persisted', 'updated', 'skipped', 'failed']) {
     await queryInterface.sequelize.query(`ALTER TABLE scrape_runs ADD CONSTRAINT scrape_runs_${field}_nonnegative CHECK (${field} >= 0)`);
   }
 
