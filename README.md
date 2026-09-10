@@ -19,6 +19,36 @@ Then open:
 
 The Compose stack starts PostgreSQL, Redis, migrations, the Express API, an independent Playwright worker, and the Next.js web application.
 
+### Simple pnpm commands
+
+For the complete local development stack, run this one command from the repository root:
+
+```bash
+pnpm dev:local
+```
+
+It starts PostgreSQL and Redis, runs migrations, then starts the API, worker, and Next.js frontend in parallel. Open http://localhost:3000.
+
+To start only the backend services:
+
+```bash
+pnpm dev:backend
+```
+
+Then, in another terminal, start the frontend:
+
+```bash
+pnpm dev:frontend
+```
+
+For the production-like all-in-Docker path:
+
+```bash
+pnpm dev:docker
+```
+
+Stop local containers with `pnpm infra:down`. Use `pnpm infra:reset` only when you intentionally want to delete the local database volume.
+
 ### Reviewer flow
 
 1. Open the UI.
