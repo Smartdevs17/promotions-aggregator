@@ -8,7 +8,6 @@ services:
     branch: main
     dockerfilePath: ./docker/api.Dockerfile
     dockerContext: .
-    dockerCommand: /bin/sh -c "pnpm db:migrate && pnpm --filter @promotions/api start"
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL

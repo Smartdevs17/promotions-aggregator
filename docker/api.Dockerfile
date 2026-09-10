@@ -7,4 +7,7 @@ ENV CI=1
 COPY . .
 RUN pnpm install --frozen-lockfile && pnpm build
 
-CMD ["pnpm", "--filter", "@promotions/api", "start"]
+COPY docker/start-api.sh /usr/local/bin/start-api
+RUN chmod +x /usr/local/bin/start-api
+
+CMD ["/usr/local/bin/start-api"]
