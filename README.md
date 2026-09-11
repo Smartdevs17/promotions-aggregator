@@ -62,17 +62,31 @@ Equivalent API triggers are `POST /scrape` and `POST /verify`.
 
 ### Hosted assessment demo
 
-The current hosted demo uses the same public API and frontend:
+The current hosted demo uses these services:
 
-- UI: https://promotions-aggregator-web.vercel.app
-- API: https://promotions-aggregator-api.onrender.com
-- API health: https://promotions-aggregator-api.onrender.com/health
+- **Frontend:** Vercel — [promotions-aggregator-web.vercel.app](https://promotions-aggregator-web.vercel.app)
+- **API:** Render Web Service — [promotions-aggregator-api.onrender.com](https://promotions-aggregator-api.onrender.com)
+- **API health:** [promotions-aggregator-api.onrender.com/health](https://promotions-aggregator-api.onrender.com/health)
+- **Database:** Neon PostgreSQL
+- **Queue:** Upstash Redis via BullMQ
 
 The Neon database is pre-populated with real scraped promotions. For a no-cost
 demo, the API and UI remain hosted while the BullMQ worker can be run locally
 with the project's Neon and Upstash environment variables. Existing data stays
 available when the local worker is stopped; new scrape or verify jobs require
 the worker to be running.
+
+Hosted request flow:
+
+```text
+Vercel frontend → Render API → Upstash Redis → local Playwright worker
+                                                   ↓
+                                             Neon PostgreSQL
+```
+
+The local Docker setup remains the complete reproducible path for reviewers;
+the hosted setup is provided for convenient assessment access without requiring
+a paid always-on worker instance.
 
 ## API
 
