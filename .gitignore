@@ -6,3 +6,5 @@ dist/
 .next/
 *.tsbuildinfo
 test-results/
+.vercel
+.env*
