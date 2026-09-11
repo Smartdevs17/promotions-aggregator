@@ -42,7 +42,7 @@ This file maps the take-home requirements to the current implementation for fina
 ## Known limitations / deliberate cuts
 
 - Single source portal only; no generic multi-portal abstraction.
-- No authentication, production deployment, automated scheduling, or large design system.
+- A production-grade deployment was a non-goal; an optional hosted assessment demo is provided in addition to the canonical local Docker workflow. There is no automated scheduling or large design system.
 - Group-by-brand operates on the currently paginated result set.
 - Social links remain empty when tenant-scoped links are not available from the source.
 - Live source mutation means a successful verification run can legitimately be non-clean.

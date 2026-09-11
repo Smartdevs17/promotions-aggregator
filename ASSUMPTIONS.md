@@ -6,7 +6,7 @@ This file records interpretations of ambiguous parts of the take-home brief and 
 
 1. **One source portal only.** The implementation is intentionally specific to The Promenade Shops at Briargate. No generic scraper/plugin framework is required.
 2. **Promotion identity.** A stable source-provided identifier will be used when discoverable. Otherwise the canonical promotion detail URL is the stable source identity. Re-scraping must not create duplicates.
-3. **Missing values.** Unavailable scalar values are represented as `null`; unavailable collections are represented as empty arrays. We do not invent brand metadata.
+3. **Missing values.** Unavailable scalar values are represented as `null`. Collection-shaped fields use their natural empty representation, for example `{}` for `socialLinks`. We do not invent brand metadata.
 4. **Brands are normalized.** A brand is stored once and referenced by promotions because multiple promotions may share the same brand metadata.
 5. **Date filtering.** A promotion matches a requested date window when its known validity interval overlaps that window. Open-ended source dates are supported.
 6. **Search semantics.** Keyword search is case-insensitive and covers promotion name and brand name as explicitly required; the MVP uses partial matching (`ILIKE`) for both keyword search and the brand filter.

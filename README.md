@@ -76,6 +76,11 @@ with the project's Neon and Upstash environment variables. Existing data stays
 available when the local worker is stopped; new scrape or verify jobs require
 the worker to be running.
 
+**Hosted demo note:** the canonical acceptance path is `docker compose up --build`,
+which starts the worker locally. If you use the hosted UI, keep the local worker
+running before clicking **Run scrape** or **Verify data**; otherwise the job may
+remain queued even though the hosted API and existing data are healthy.
+
 Hosted request flow:
 
 ```text
