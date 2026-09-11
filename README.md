@@ -60,6 +60,20 @@ Stop local containers with `pnpm infra:down`. Use `pnpm infra:reset` only when y
 
 Equivalent API triggers are `POST /scrape` and `POST /verify`.
 
+### Hosted assessment demo
+
+The current hosted demo uses the same public API and frontend:
+
+- UI: https://promotions-aggregator-web.vercel.app
+- API: https://promotions-aggregator-api.onrender.com
+- API health: https://promotions-aggregator-api.onrender.com/health
+
+The Neon database is pre-populated with real scraped promotions. For a no-cost
+demo, the API and UI remain hosted while the BullMQ worker can be run locally
+with the project's Neon and Upstash environment variables. Existing data stays
+available when the local worker is stopped; new scrape or verify jobs require
+the worker to be running.
+
 ## API
 
 The required endpoints are:
@@ -144,6 +158,10 @@ Browser / Next.js
 The worker persists normalized brands/promotions back to PostgreSQL. Verification re-crawls the live source and compares meaningful normalized values with persisted records.
 
 See `DESIGN.md` for implementation decisions, `ASSUMPTIONS.md` for source discoveries/ambiguities, and `docs/ASSESSMENT_AUDIT.md` for an acceptance-criteria map.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 ## Source behavior and limitations
 
